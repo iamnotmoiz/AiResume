@@ -1,0 +1,499 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Sparkles, 
+  Globe, 
+  CheckCircle2, 
+  Loader2, 
+  ExternalLink,
+  ShieldCheck, 
+  Link as LinkIcon,
+  UploadCloud,
+  AlertCircle,
+  ArrowLeft,
+  Clock,
+  Info,
+  Save,
+  Trash2,
+  Terminal,
+  FileCode
+} from 'lucide-react';
+
+// --- Gemini Config ---
+const apiKey = ""; 
+
+/**
+ * DEPLOYMENT COMPARISON:
+ * * 1. GitHub Pages (Recommended for this project):
+ * - Pros: 100% Free, Automated via our API logic, integrated with your source code.
+ * - Best for: Static portfolios, resumes, and project showcases.
+ * * 2. Firebase Hosting:
+ * - Pros: Extremely fast CDN, easy to scale if you add a database (Firestore).
+ * - Best for: Web apps with user accounts or dynamic data.
+ */
+
+const App = () => {
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('');
+  const [errorDetails, setErrorDetails] = useState('');
+  
+  // Local Persistence States
+  const [githubToken, setGithubToken] = useState(() => localStorage.getItem('rt_gh_token') || '');
+  const [jobLink, setJobLink] = useState('');
+  const [resumeFile, setResumeFile] = useState(null);
+  const [resumeName, setResumeName] = useState(() => localStorage.getItem('rt_resume_name') || '');
+  
+  const [generatedUrl, setGeneratedUrl] = useState('');
+  const [generatedHtml, setGeneratedHtml] = useState('');
+  const [countdown, setCountdown] = useState(60);
+  const [estRemaining, setEstRemaining] = useState(45);
+  
+  const fileInputRef = useRef(null);
+
+  // Auto-save Token
+  useEffect(() => {
+    if (githubToken) {
+      localStorage.setItem('rt_gh_token', githubToken);
+    }
+  }, [githubToken]);
+
+  // Success Timer
+  useEffect(() => {
+    let timer;
+    if (step === 3 && countdown > 0) {
+      timer = setInterval(() => setCountdown(prev => prev - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [step, countdown]);
+
+  // Button Est Countdown
+  useEffect(() => {
+    let estTimer;
+    if (loading && estRemaining > 0) {
+      estTimer = setInterval(() => setEstRemaining(prev => Math.max(prev - 1, 1)), 1000);
+    }
+    return () => clearInterval(estTimer);
+  }, [loading, estRemaining]);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setResumeFile(file);
+      setResumeName(file.name);
+      localStorage.setItem('rt_resume_name', file.name);
+      setStatus('Resume saved to local session');
+      setTimeout(() => setStatus(''), 3000);
+    }
+  };
+
+  const clearStorage = () => {
+    localStorage.clear();
+    setGithubToken('');
+    setResumeName('');
+    setResumeFile(null);
+    setStatus('Local data cleared');
+    setTimeout(() => setStatus(''), 3000);
+  };
+
+  const generateResume = async () => {
+    setLoading(true);
+    setEstRemaining(55);
+    setProgress(10);
+    setErrorDetails('');
+    setStatus('Researching job requirements via Google Search...');
+    
+    const systemPrompt = `You are a Senior Creative Developer and Personal Branding Specialist. 
+    Your mission is to generate a BOUTIQUE, HIGH-END personal portfolio website that feels like a premium SaaS landing page.
+
+    DESIGN SPECIFICATIONS:
+    1. FRAMEWORK: Use Tailwind CSS via CDN.
+    2. AESTHETIC: "Apple-style" or "Modern Dark" aesthetic. Use deep slate/zinc backgrounds with subtle neon-indigo accents, glassmorphism (backdrop-blur), and soft gradients.
+    3. TYPOGRAPHY: Use 'Inter' or 'Geist' font families via Google Fonts.
+    4. ANIMATIONS: Include CSS keyframe animations for fade-ins, slide-ups, and hover scales.
+    5. SECTIONS:
+       - Sticky Glassmorphic Header with Nav links.
+       - Hero: A high-impact, personalized headline based on the Job Description keywords.
+       - Bento Grid: A modern grid layout for "Core Competencies".
+       - Experience: A sleek vertical timeline with bullet points that emphasize QUANTIFIED achievements.
+       - Projects/Stack: Use floating cards with soft shadows and hover effects.
+       - Footer: "Let's Connect" section with social link placeholders.
+
+    DATA INTEGRATION:
+    - FACTUAL ACCURACY: You MUST use the actual data from the provided resume. Do not invent degrees or companies.
+    - STRATEGIC REWRITING: Study the Job URL using Google Search. Rewrite the candidate's experience to mirror the job's tone and prioritize the specific skills mentioned in the posting.
+    - VISUALS: Use Lucide or Phosphor icons for a modern look.
+
+    Output ONLY a single-file, minified HTML block. No commentary. No markdown backticks.`;
+
+    const userPrompt = `
+      RESUME SOURCE: Use the factual details from this candidate's resume: ${resumeName}.
+      TARGET JOB URL: Research the job requirements here: ${jobLink}
+      
+      Generate a breathtaking, modern, and highly-tailored HTML website resume for this specific role. Ensure every word on the page is optimized to pass the employer's checklist while looking like a top-tier designer built it.
+    `;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          tools: [{ "google_search": {} }]
+        })
+      });
+      
+      const data = await response.json();
+      const html = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      setProgress(40);
+      
+      return html.replace(/```html|```/g, '').trim();
+    } catch (err) {
+      setErrorDetails('Gemini API Error: ' + err.message);
+      setLoading(false);
+      return null;
+    }
+  };
+
+  const deployToGithub = async (html) => {
+    const repoName = `portfolio-${Date.now()}`;
+    const headers = {
+      'Authorization': `token ${githubToken.trim()}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json'
+    };
+
+    try {
+      setProgress(50);
+      setStatus('Creating Portfolio Repo...');
+      const repoRes = await fetch('https://api.github.com/user/repos', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: repoName, auto_init: true })
+      });
+      const repoData = await repoRes.json();
+      if (!repoRes.ok) throw new Error(`GitHub: ${repoData.message}`);
+
+      setProgress(75);
+      setStatus('Uploading Site Assets...');
+      const fileRes = await fetch(`https://api.github.com/repos/${repoData.full_name}/contents/index.html`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          message: "Launch AI Tailored Portfolio",
+          content: btoa(unescape(encodeURIComponent(html)))
+        })
+      });
+      if (!fileRes.ok) throw new Error('Failed to upload site code.');
+
+      setProgress(90);
+      setStatus('Propagating DNS...');
+      await new Promise(r => setTimeout(r, 1500));
+      await fetch(`https://api.github.com/repos/${repoData.full_name}/pages`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ source: { branch: 'main' } })
+      });
+      
+      setProgress(100);
+      setGeneratedUrl(`https://${repoData.owner.login}.github.io/${repoName}/`);
+      setGeneratedHtml(html);
+      setStep(3);
+    } catch (err) {
+      setErrorDetails(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadFile = (content, fileName, contentType) => {
+    const a = document.createElement("a");
+    const file = new Blob([content], { type: contentType });
+    a.href = URL.createObjectURL(file);
+    a.download = fileName;
+    a.click();
+  };
+
+  const handleProcess = async () => {
+    const html = await generateResume();
+    if (html) await deployToGithub(html);
+  };
+
+  const reset = () => {
+    setStep(1);
+    setJobLink('');
+    setLoading(false);
+    setProgress(0);
+    setCountdown(60);
+    setErrorDetails('');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
+      <header className="bg-white border-b h-16 flex items-center justify-between px-8 shadow-sm sticky top-0 z-50">
+        <div className="flex items-center gap-2">
+          <Sparkles className="text-indigo-600 w-6 h-6" />
+          <h1 className="font-bold text-xl tracking-tight">ResumeAutopilot</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+            <ShieldCheck size={12} className="text-green-500" /> Session-Only Sync
+          </div>
+          { (githubToken || resumeName) && (
+            <button onClick={clearStorage} className="text-slate-400 hover:text-red-500 transition-colors p-2" title="Clear local data">
+              <Trash2 size={18} />
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto mt-12 px-6">
+        {step === 1 ? (
+          <div className="space-y-12 animate-in fade-in duration-1000">
+            <div className="text-center space-y-3">
+              <h2 className="text-5xl font-black text-slate-900 tracking-tight leading-tight">
+                Your Career, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">Automated.</span>
+              </h2>
+              <p className="text-slate-500 text-lg max-w-xl mx-auto font-medium">
+                Upload your resume, paste a job link, and we'll deploy a world-class portfolio to GitHub Pages in seconds.
+              </p>
+            </div>
+
+            <div className="space-y-8">
+              {/* Step 1: PDF */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold text-sm">1</div>
+                  <h3 className="text-lg font-bold">Your Resume</h3>
+                </div>
+                <div 
+                  onClick={() => fileInputRef.current.click()}
+                  className={`border-2 border-dashed rounded-[2rem] p-10 bg-white transition-all cursor-pointer text-center group ${resumeFile || resumeName ? 'border-green-500 bg-green-50/20' : 'border-slate-200 hover:border-indigo-400 hover:bg-slate-50'}`}
+                >
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileChange} />
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm transition-transform group-hover:scale-110 duration-500 ${resumeFile || resumeName ? 'bg-green-100 text-green-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                    {(resumeFile || resumeName) ? <CheckCircle2 size={32} /> : <UploadCloud size={32} />}
+                  </div>
+                  <p className="font-extrabold text-slate-800">
+                    {resumeFile ? resumeFile.name : (resumeName ? `${resumeName} (Synced)` : "Choose PDF Resume")}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-2 font-medium">PDF formats only supported</p>
+                </div>
+              </section>
+
+              {/* Step 2: Job Link */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold text-sm">2</div>
+                  <h3 className="text-lg font-bold">Target Job Link</h3>
+                </div>
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-500 transition-all">
+                  <div className="flex items-center gap-4">
+                    <LinkIcon className="text-slate-300" size={20} />
+                    <input 
+                      type="url" 
+                      className="w-full bg-transparent outline-none font-semibold text-slate-800 placeholder:text-slate-300" 
+                      placeholder="Paste the LinkedIn or Company job posting URL..."
+                      value={jobLink}
+                      onChange={(e) => setJobLink(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Step 3: Token */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold text-sm">3</div>
+                  <h3 className="text-lg font-bold">GitHub Access</h3>
+                </div>
+                <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white space-y-6 shadow-2xl relative border border-slate-800 overflow-hidden">
+                  <div className="absolute top-0 right-0 p-8 opacity-10">
+                    <ShieldCheck size={120} />
+                  </div>
+                  
+                  <div className="flex items-center justify-between relative z-10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                      <span className="text-sm font-bold tracking-tight text-slate-300">GitHub Authentication Token</span>
+                    </div>
+                    <a 
+                      href="https://github.com/settings/tokens/new?description=ResumeAutopilot&scopes=repo,workflow,write:packages" 
+                      target="_blank" 
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-black flex items-center gap-1.5"
+                    >
+                      New Token <ExternalLink size={14}/>
+                    </a>
+                  </div>
+                  
+                  <input 
+                    type="password" 
+                    className="w-full p-5 bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono placeholder:text-slate-600 transition-all" 
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                  />
+
+                  {/* Build Button */}
+                  <button 
+                    onClick={handleProcess}
+                    disabled={loading || (!resumeFile && !resumeName) || !jobLink || !githubToken}
+                    className="w-full relative h-20 overflow-hidden bg-white text-slate-900 rounded-2xl font-black text-xl transition-all disabled:opacity-30 active:scale-[0.98] shadow-2xl hover:bg-indigo-50"
+                  >
+                    <div 
+                      className="absolute left-0 top-0 h-full bg-indigo-600/10 transition-all duration-700 ease-out"
+                      style={{ width: `${progress}%` }}
+                    />
+                    
+                    <div className="relative z-10 flex flex-col items-center justify-center h-full">
+                      {loading ? (
+                        <>
+                          <div className="flex items-center gap-3">
+                            <Loader2 className="animate-spin text-indigo-600" size={24} />
+                            <span className="text-slate-700">{status}</span>
+                          </div>
+                          <div className="text-[10px] uppercase font-black tracking-widest mt-1 text-slate-400">
+                            ~ {estRemaining}s Left
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <Sparkles size={24} className="text-indigo-600" />
+                          <span>Build Tailored Portfolio</span>
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                  
+                  {errorDetails && (
+                    <div className="bg-red-500/10 border border-red-500/50 p-5 rounded-2xl flex items-start gap-3 text-red-200 text-xs animate-in slide-in-from-top-4">
+                      <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-400" />
+                      <div className="space-y-1">
+                        <p className="font-black uppercase tracking-wider">Deployment Error</p>
+                        <p className="leading-relaxed opacity-80">{errorDetails}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-4xl mx-auto space-y-8 animate-in zoom-in-95 duration-700">
+             <div className="text-center space-y-3">
+                <div className="bg-green-100 text-green-600 w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl shadow-green-100 ring-8 ring-green-50 mb-4">
+                    <CheckCircle2 size={40} />
+                </div>
+                <h2 className="text-5xl font-black text-slate-900 tracking-tight">System Online.</h2>
+                <p className="text-slate-500 text-lg font-medium">Your site is live on GitHub Pages. Propagation takes ~60s.</p>
+             </div>
+
+             <div className="grid md:grid-cols-2 gap-6">
+                {/* Live Link Card */}
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl space-y-6 flex flex-col justify-between">
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600">Public Link</span>
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                                <Clock size={10} /> 0:{(countdown).toString().padStart(2, '0')}
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-500 leading-relaxed font-medium">
+                            If you see a <b className="text-slate-900">404</b>, please wait for the counter to finish before clicking the link again.
+                        </p>
+                    </div>
+                    
+                    <a 
+                        href={generatedUrl} 
+                        target="_blank" 
+                        className="flex items-center justify-center gap-3 bg-indigo-600 text-white px-8 py-5 rounded-2xl font-black hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-100"
+                    >
+                        <Globe size={20} /> 
+                        Visit Live Site 
+                        <ExternalLink size={16} className="opacity-50 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                    </a>
+                </div>
+
+                {/* Local Backup Card */}
+                <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white space-y-6 flex flex-col justify-between">
+                    <div className="space-y-4">
+                        <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Manual Deployment (Firebase/Manual)</span>
+                        <p className="text-sm text-slate-400 leading-relaxed font-medium">
+                            Want to host elsewhere? Download your tailored source code and configuration files.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => downloadFile(generatedHtml, 'index.html', 'text/html')}
+                            className="flex-1 flex items-center justify-center gap-2 bg-slate-800 text-white px-4 py-4 rounded-xl font-bold hover:bg-slate-700 transition-all text-xs border border-slate-700"
+                        >
+                            <FileCode size={16} /> HTML Site
+                        </button>
+                        <button 
+                            onClick={() => downloadFile(`{ "hosting": { "public": ".", "ignore": ["firebase.json", "**/.*", "**/node_modules/**"] } }`, 'firebase.json', 'application/json')}
+                            className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/20 text-indigo-300 px-4 py-4 rounded-xl font-bold hover:bg-indigo-500/30 transition-all text-xs border border-indigo-500/30"
+                        >
+                            <Terminal size={16} /> Firebase.json
+                        </button>
+                    </div>
+                </div>
+             </div>
+
+             {/* Deployment Guide */}
+             <div className="bg-white border border-slate-200 rounded-[2.5rem] p-10 space-y-6">
+                <h3 className="text-xl font-black text-slate-900">Hosting Guide</h3>
+                <div className="grid md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                        <h4 className="font-bold flex items-center gap-2 text-indigo-600">
+                            <CheckCircle2 size={16}/> Option A: GitHub (Done)
+                        </h4>
+                        <ol className="text-sm text-slate-500 space-y-3 font-medium">
+                            <li>1. We've already created a repository for you.</li>
+                            <li>2. The code is uploaded to the <code className="bg-slate-100 px-1 rounded">main</code> branch.</li>
+                            <li>3. GitHub Pages is building the site automatically.</li>
+                        </ol>
+                    </div>
+                    <div className="space-y-4">
+                        <h4 className="font-bold flex items-center gap-2 text-slate-900">
+                            <Terminal size={16}/> Option B: Firebase
+                        </h4>
+                        <ol className="text-sm text-slate-500 space-y-3 font-medium">
+                            <li>1. Run <code className="bg-slate-100 px-1 rounded">npm install -g firebase-tools</code></li>
+                            <li>2. Run <code className="bg-slate-100 px-1 rounded">firebase login</code></li>
+                            <li>3. Put <code className="bg-slate-100 px-1 rounded">index.html</code> and <code className="bg-slate-100 px-1 rounded">firebase.json</code> in a folder.</li>
+                            <li>4. Run <code className="bg-slate-100 px-1 rounded">firebase deploy</code></li>
+                        </ol>
+                    </div>
+                </div>
+                <div className="pt-6 border-t border-slate-100">
+                    <button onClick={reset} className="text-indigo-600 font-black text-sm hover:underline flex items-center gap-2">
+                        <ArrowLeft size={16} /> Build Another Version
+                    </button>
+                </div>
+             </div>
+          </div>
+        )}
+      </main>
+
+      {/* Persistence Tag */}
+      <div className="fixed bottom-8 left-8 hidden lg:block">
+        <div className="bg-white/90 backdrop-blur border border-slate-200 px-5 py-3 rounded-2xl shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-left-8 duration-1000">
+           <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+           <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Local Session Active</p>
+        </div>
+      </div>
+
+      {/* Toast Notification */}
+      {status && !loading && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] text-sm font-black flex items-center gap-3 animate-in fade-in slide-in-from-bottom-10">
+          <CheckCircle2 size={18} className="text-green-400" />
+          {status}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
