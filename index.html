@@ -6,22 +6,22 @@
     <title>ResumeAutopilot | AI Portfolio Architect</title>
     
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
     
     <!-- React & Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)"></script>
+    <script src="[https://unpkg.com/react-dom@18/umd/react-dom.production.min.js](https://unpkg.com/react-dom@18/umd/react-dom.production.min.js)"></script>
+    <script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
     
     <!-- PDF.js for Client-Side Text Extraction -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="[https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js](https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js)"></script>
     
     <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="[https://unpkg.com/lucide@latest](https://unpkg.com/lucide@latest)"></script>
     
     <script>
         // Initialize PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '[https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js](https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js)';
         
         tailwind.config = {
             theme: {
@@ -48,8 +48,8 @@
     </script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap'); /* For Tesla/Tech themes */
+        @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap)');
+        @import url('[https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap)'); /* For Tesla/Tech themes */
         
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
         .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.5); }
@@ -72,6 +72,21 @@
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
+        };
+
+        // --- Helper: Robust HTML Extractor ---
+        const extractHtmlCode = (text) => {
+            if (!text) return '';
+            // 1. Try extracting from markdown blocks
+            const match = text.match(/```html([\s\S]*?)```/);
+            if (match) return match[1].trim();
+            
+            // 2. If no markdown, check for DOCTYPE
+            const docTypeIndex = text.indexOf('<!DOCTYPE html>');
+            if (docTypeIndex !== -1) return text.substring(docTypeIndex);
+            
+            // 3. Fallback to raw text
+            return text.trim();
         };
 
         // --- Main Application ---
@@ -131,7 +146,7 @@
             // --- AI Generation Logic ---
             const generateWebsite = async () => {
                 if (!resumeText || !jobLink) {
-                    setError("Please upload a resume and provide a job link.");
+                    setError("Please upload a resume and provide a job description.");
                     return;
                 }
 
@@ -140,8 +155,14 @@
                 setStatusMessage("Analyzing your career history...");
 
                 // LOCATION 1: Main Generation
-                const apiKey = "AIzaSyCQJkjKZQkw15rgcrQzjG8rZ-Kneefg1pc"; // 
+                const apiKey = "AIzaSyCQJkjKZQkw15rgcrQzjG8rZ-Kneefg1pc"; //
                 
+                if (!apiKey || apiKey.includes("*insert")) {
+                    setError("Missing API Key. Please edit the code to insert your Google AI Studio Key.");
+                    setStep(1);
+                    return;
+                }
+
                 // Specific Design Systems
                 const themes = {
                     'Apple': {
@@ -219,7 +240,7 @@
                     [RESUME TEXT]:
                     ${resumeText.substring(0, 8000)} 
 
-                    [TARGET JOB LINK/DESC]:
+                    [TARGET JOB DESCRIPTION]:
                     ${jobLink}
 
                     Create the ${selectedTheme}-themed website code.
@@ -227,28 +248,37 @@
 
                 try {
                     setStatusMessage(`Designing ${selectedTheme} interface...`);
-                    // SWITCHED TO gemini-1.5-flash for better compatibility with personal keys
+                    
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: userMessage }] }],
                             systemInstruction: { parts: [{ text: systemPrompt }] },
-                            tools: [{ "google_search": {} }]
+                            // Add safety settings to prevent false positives on resumes
+                            safetySettings: [
+                                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                            ]
                         })
                     });
 
                     setStatusMessage("Writing code...");
                     const data = await response.json();
                     
-                    if (data.error) throw new Error(data.error.message);
+                    if (data.error) throw new Error(data.error.message || "API Error");
                     
-                    let html = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                    html = html.replace(/```html/g, '').replace(/```/g, '').trim();
+                    let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    let html = extractHtmlCode(rawText);
                     
+                    if (html.length < 100) throw new Error("Generated code was too short. Please try again.");
+
                     setGeneratedHtml(html);
                     setStep(3); // Preview
                 } catch (err) {
+                    console.error("AI Gen Error:", err);
                     setError("Generation failed: " + err.message);
                     setStep(1);
                 }
@@ -261,7 +291,13 @@
                 setIsRefining(true);
                 
                 // LOCATION 2: Refinement/Chat Bar
-                const apiKey = "AIzaSyCQJkjKZQkw15rgcrQzjG8rZ-Kneefg1pc"; // 
+                const apiKey = "AIzaSyCQJkjKZQkw15rgcrQzjG8rZ-Kneefg1pc"; //
+
+                if (!apiKey || apiKey.includes("*insert")) {
+                    alert("Please enter your API Key in the code for refinement to work.");
+                    setIsRefining(false);
+                    return;
+                }
 
                 const systemPrompt = `
                     You are an expert web developer assisting a user in refining a portfolio website.
@@ -284,26 +320,32 @@
                 `;
 
                 try {
-                    // SWITCHED TO gemini-1.5-flash for better compatibility with personal keys
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: userMessage }] }],
-                            systemInstruction: { parts: [{ text: systemPrompt }] }
+                            systemInstruction: { parts: [{ text: systemPrompt }] },
+                             safetySettings: [
+                                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                            ]
                         })
                     });
 
                     const data = await response.json();
-                    if (data.error) throw new Error(data.error.message);
+                    if (data.error) throw new Error(data.error.message || "API Refinement Error");
 
-                    let html = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                    html = html.replace(/```html/g, '').replace(/```/g, '').trim();
+                    let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    let html = extractHtmlCode(rawText);
 
                     setGeneratedHtml(html);
                     setRefinementPrompt('');
                 } catch (err) {
-                    setError("Refinement failed: " + err.message);
+                    console.error("Refinement Error:", err);
+                    alert("Refinement failed: " + err.message);
                 } finally {
                     setIsRefining(false);
                 }
@@ -326,7 +368,7 @@
                 };
 
                 try {
-                    const repoRes = await fetch('https://api.github.com/user/repos', {
+                    const repoRes = await fetch('[https://api.github.com/user/repos](https://api.github.com/user/repos)', {
                         method: 'POST',
                         headers,
                         body: JSON.stringify({ name: repoName, auto_init: true })
@@ -435,7 +477,7 @@
                                     <input 
                                         type="text" 
                                         className="bg-transparent w-full outline-none font-medium text-slate-800 placeholder:text-slate-400"
-                                        placeholder="Paste Job URL (LinkedIn, Indeed, etc)..."
+                                        placeholder="Paste Job Description (Recommended)..."
                                         value={jobLink}
                                         onChange={(e) => setJobLink(e.target.value)}
                                     />
